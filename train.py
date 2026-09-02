@@ -17,9 +17,11 @@ from tqdm import tqdm
 import numpy as np
 from utils import cam_util
 from utils.train_util import *
-# non-ingp model
+
+# EDIT : non-ingp model
 from models.vertex_color import Model, TetOptimizer
-# from models.ingp_color import Model, TetOptimizer
+#from models.ingp_color import Model, TetOptimizer
+
 from models.frozen import freeze_model
 # from models.ingp_density import Model, TetOptimizer
 # from models.frozen_vertices import freeze_model

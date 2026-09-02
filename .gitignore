@@ -46,6 +46,7 @@ debug_output.png
 *.jpg
 *.jpeg
 *.gif
+*.png
 
 # Lock files
 *.lock
