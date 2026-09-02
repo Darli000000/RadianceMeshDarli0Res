@@ -17,8 +17,9 @@ from tqdm import tqdm
 import numpy as np
 from utils import cam_util
 from utils.train_util import *
-# from models.vertex_color import Model, TetOptimizer
-from models.ingp_color import Model, TetOptimizer
+# non-ingp model
+from models.vertex_color import Model, TetOptimizer
+# from models.ingp_color import Model, TetOptimizer
 from models.frozen import freeze_model
 # from models.ingp_density import Model, TetOptimizer
 # from models.frozen_vertices import freeze_model
@@ -66,8 +67,9 @@ args = Args()
 args.tile_size = 4
 args.image_folder = "images_2"
 args.eval = False
-args.dataset_path = Path("/optane/nerf_datasets/360/bonsai")
-args.output_path = Path("output/test/")
+# args.dataset_path = Path("/optane/nerf_datasets/360/bonsai")
+args.dataset_path = Path("datasets/bonsai")
+args.output_path = Path("output/bonsai_img2_30k")
 args.iterations = 30000
 args.ckpt = ""
 args.resolution = 1
@@ -284,7 +286,38 @@ for iteration in progress_bar:
 
     if do_cloning and not model.frozen:
         with torch.no_grad():
-            sampled_cams = [train_cameras[i] for i in densification_sampler.nextids()]
+            # sampled_cams = [train_cameras[i] for i in densification_sampler.nextids()]
+            # DEBUG
+            sampled_ids = densification_sampler.nextids()
+            sampled_id_list = sampled_ids.detach().cpu().tolist()
+            sampled_cams = [train_cameras[i] for i in sampled_id_list]
+
+            # 保存发生 densification 之前的完整状态；每次覆盖，只保留最新一次
+            debug_dir = args.output_path / "debug_pre_densify"
+            debug_dir.mkdir(exist_ok=True, parents=True)
+
+            debug_state = model.state_dict()
+            debug_state["indices"] = model.indices.detach().cpu()
+            debug_state["empty_indices"] = model.empty_indices.detach().cpu()
+
+            torch.save(debug_state, debug_dir / "ckpt.pth")
+            torch.save(
+                {
+                    "iteration": iteration,
+                    "camera_indices": sampled_id_list,
+                    "num_vertices": model.vertices.shape[0],
+                    "num_tetrahedra": model.indices.shape[0],
+                },
+                debug_dir / "meta.pth",
+            )
+
+            print(
+                f"[Debug snapshot] iteration={iteration}, "
+                f"V={model.vertices.shape[0]}, T={model.indices.shape[0]}, "
+                f"path={debug_dir}",
+                flush=True,
+            )
+            # DEBUG END
 
             render_pkg = render(sample_camera, model, min_t=min_t, tile_size=args.tile_size)
             sample_image = render_pkg['render']

@@ -184,3 +184,38 @@ def render_debug(render_tensor, model, camera, density_multi=1, tile_size=16):
 
     del render_pkg, render_tensor
     return image
+
+
+# ADD
+C0 = 0.28209479177387814
+def RGB2SH(rgb):
+    return (rgb - 0.5) / C0
+
+def SH2RGB(sh):
+    return sh * C0 + 0.5
+
+def inverse_sigmoid(y):
+    return torch.log(y / (1 - y))
+
+def rgbs_activation(rgbs_raw):
+    # rgbs = torch.cat([torch.nn.functional.softplus(1e-1*rgbs_raw[:, :3]), safe_exp(rgbs_raw[:, 3:])], dim=1)
+    rgbs = torch.cat([torch.sigmoid(rgbs_raw[:, :3]), safe_exp(rgbs_raw[:, 3:])], dim=1)
+    return rgbs
+
+def safe_exp(x):
+    return x.clip(max=5).exp()
+
+def safe_trig_helper(x, fn, t=100 * torch.pi):
+    """Helper function used by safe_cos/safe_sin: mods x before sin()/cos()."""
+    return fn(torch.nan_to_num(torch.where(torch.abs(x) < t, x, x % t)))
+
+
+def safe_cos(x):
+    """jnp.cos() on a TPU may NaN out for large values."""
+    return safe_trig_helper(x, torch.cos)
+
+
+def safe_sin(x):
+    """jnp.sin() on a TPU may NaN out for large values."""
+    return safe_trig_helper(x, torch.sin)
+# ADD END

@@ -52,6 +52,37 @@ def render_err(gt_image, camera: Camera, model, tile_size=16, min_t=0.1, **kwarg
     st = time.time()
     sorted_tetra_idx, tile_ranges, vs_tetra, circumcenter, mask, _ = vertex_and_tile_shader(
         indices, vertices, tcam, render_grid)
+
+    # DEBUG
+    # Debug：在进入自定义 GPU shader 前检查索引范围
+    assert indices.dtype == torch.int32, indices.dtype
+    assert indices.is_contiguous(), "indices is not contiguous"
+
+    if indices.numel() > 0:
+        min_vertex_idx = int(indices.min().item())
+        max_vertex_idx = int(indices.max().item())
+        assert min_vertex_idx >= 0, min_vertex_idx
+        assert max_vertex_idx < vertices.shape[0], (
+            max_vertex_idx,
+            vertices.shape[0],
+        )
+
+    if sorted_tetra_idx.numel() > 0:
+        min_tet_idx = int(sorted_tetra_idx.min().item())
+        max_tet_idx = int(sorted_tetra_idx.max().item())
+        assert min_tet_idx >= 0, min_tet_idx
+        assert max_tet_idx < indices.shape[0], (
+            max_tet_idx,
+            indices.shape[0],
+        )
+
+    if tile_ranges.numel() > 0:
+        assert int(tile_ranges.min().item()) >= 0
+        assert int(tile_ranges.max().item()) <= sorted_tetra_idx.numel(), (
+            int(tile_ranges.max().item()),
+            sorted_tetra_idx.numel(),
+        )
+    # DEBUG END
    
     # torch.cuda.synchronize()
     # ic("vt", time.time()-st)
@@ -68,7 +99,7 @@ def render_err(gt_image, camera: Camera, model, tile_size=16, min_t=0.1, **kwarg
     # st = time.time()
     tet_vertices = vertices[indices]
     distortion_img = torch.zeros((render_grid.image_height, 
-                                render_grid.image_width, 4), 
+                                render_grid.image_width, 5), # EDITED 4->5
                                 device=device)
     output_img = torch.zeros((render_grid.image_height, 
                                 render_grid.image_width, 4), 

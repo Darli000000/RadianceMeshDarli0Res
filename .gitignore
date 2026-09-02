@@ -15,6 +15,10 @@ env/
 .env/
 .venv/
 
+# datasets
+./datasets/
+*.zip
+
 # Development and IDE files
 .idea/
 .vscode/

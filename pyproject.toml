@@ -26,6 +26,9 @@ dependencies = [
     "fused-ssim",
     "termplotlib>=0.3.9",
     "tinycudann",
+    "setuptools==80.9.0",
+    "wheel",
+    "ninja",
 ]
 
 [tool.uv.sources]
@@ -35,10 +38,17 @@ fused-ssim = { git = "https://github.com/rahul-goel/fused-ssim/" }
 gdel3d = { git = "https://github.com/half-potato/pyGDel3D.git" }
 nvdiffrast = { git = "https://github.com/NVlabs/nvdiffrast" }
 tinycudann = { git = "https://github.com/NVlabs/tiny-cuda-nn/", subdirectory = "bindings/torch" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
 
 [tool.uv]
-no-build-isolation-package = ["fused-ssim", "tinycudann"]
+no-build-isolation-package = ["fused-ssim", "tinycudann", "nvdiffrast", "gdel3d",]
 
 [tool.uv.extra-build-dependencies]
 fused-ssim = ["setuptools"]
 
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

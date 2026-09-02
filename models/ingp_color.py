@@ -518,7 +518,13 @@ class Model(BaseModel):
         else:
             v = Del(verts.shape[0])
             indices_np, prev = v.compute(verts.detach().cpu().double())
-            indices_np = indices_np.numpy()
+            #indices_np = indices_np.numpy()
+            # 兼容返回 PyTorch Tensor 或 NumPy 数组的情况
+            if isinstance(indices_np, torch.Tensor):
+                indices_np = indices_np.detach().cpu().numpy()
+            else:
+                indices_np = np.asarray(indices_np)
+                
             indices_np = indices_np[(indices_np < verts.shape[0]).all(axis=1)]
             del prev
         

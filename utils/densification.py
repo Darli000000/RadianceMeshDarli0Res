@@ -159,6 +159,23 @@ def collect_render_stats(
         target = cam.original_image.cuda()
 
         image_votes, extras = render_err( target, cam, model, tile_size=args.tile_size)
+    # DEBUG
+    # for cam_no, cam in enumerate(sampled_cameras):
+    #     allocated = torch.cuda.memory_allocated() / 1024**2
+    #     reserved = torch.cuda.memory_reserved() / 1024**2
+
+    #     print(
+    #         f"[Densify camera {cam_no + 1}/{len(sampled_cameras)}] "
+    #         f"uid={cam.uid}, image={cam.image_name}, "
+    #         f"allocated={allocated:.0f} MiB, reserved={reserved:.0f} MiB",
+    #         flush=True,
+    #     )
+
+    #     target = cam.original_image.cuda()
+    #     image_votes, extras = render_err(
+    #         target, cam, model, tile_size=args.tile_size
+    #     )
+    # DEBUG END
 
         tc = extras["tet_count"][..., 0]
         max_T = extras["tet_count"][..., 1].float() / 65535
