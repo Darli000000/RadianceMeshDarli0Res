@@ -16,7 +16,7 @@ env/
 .venv/
 
 # datasets
-/datasets/
+datasets/
 *.zip
 
 # Development and IDE files
