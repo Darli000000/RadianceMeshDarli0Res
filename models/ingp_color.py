@@ -19,7 +19,7 @@ from utils.args import Args
 from scipy.spatial import  Delaunay, ConvexHull
 import open3d as o3d
 from utils.model_util import *
-from models.base_model import BaseModel
+from models.radiance_core import RadianceMeshCore, activate_raw_properties
 from utils.ingp_util import grid_scale, compute_grid_offsets
 from utils.hashgrid import HashEmbedderOptimized
 from utils import hashgrid
@@ -194,15 +194,9 @@ class iNGPDW(nn.Module):
         field_samples = self.gradient_net(h)
         sh  = self.sh_net(h).half()
 
-        rgb = rgb.reshape(-1, 3, 1) + 0.5
-        density = safe_exp(sigma+self.density_offset)
-        # grd = torch.tanh(field_samples.reshape(-1, 1, 3)) / math.sqrt(3)
-        grd = field_samples.reshape(-1, 1, 3)
-        grd = grd / ((grd * grd).sum(dim=-1, keepdim=True) + 1).sqrt()
-        # grd = rgb * torch.tanh(field_samples.reshape(-1, 3, 3))  # shape (T, 3, 3)
-        return density, rgb.reshape(-1, 3), grd, sh
+        return activate_raw_properties(sigma, rgb, field_samples, sh, self.density_offset)
 
-class Model(BaseModel):
+class Model(RadianceMeshCore):
     def __init__(self,
                  vertices: torch.Tensor,
                  ext_vertices: torch.Tensor,
@@ -294,15 +288,6 @@ class Model(BaseModel):
         self.contracted_vertices = nn.Parameter(vertices.detach())
         self.update_triangulation()
 
-    @property
-    def num_int_verts(self):
-        return self.contracted_vertices.shape[0]
-
-    def get_circumcenters(self):
-        circumcenter =  pre_calc_cell_values(
-            self.vertices, self.indices, self.center, self.scene_scaling)
-        return circumcenter
-
     def compute_batch_features(self, vertices, indices, start, end, circumcenters=None):
         tets = vertices[indices[start:end]]
         if circumcenters is None:
@@ -347,97 +332,6 @@ class Model(BaseModel):
         # output = [v[:N] for v in output]
         return circumcenter, *output
 
-    def get_cell_values(self, camera: Camera, mask=None,
-                        all_circumcenters=None, radii=None):
-        indices = self.indices[mask] if mask is not None else self.indices
-        vertices = self.vertices
-
-        sh_dim = (self.max_sh_deg+1)**2 - 1
-        features = torch.empty((indices.shape[0], self.feature_dim), device=self.device)
-        shs = torch.empty((indices.shape[0], sh_dim, 3), device=self.device)
-        start = 0
-        for start in range(0, indices.shape[0], self.chunk_size):
-            end = min(start + self.chunk_size, indices.shape[0])
-            circumcenters, density, rgb, grd, sh = self.compute_batch_features(
-                vertices, indices, start, end, circumcenters=all_circumcenters)
-            if self.ablate_gradient:
-                grd = torch.zeros_like(grd)
-            centroids = vertices[indices[start:end]].mean(dim=1)
-            shs[start:end] = sh.reshape(-1, sh_dim, 3)
-            dvrgbs = activate_output(camera.camera_center.to(self.device),
-                                     density, rgb, grd,
-                                     sh.reshape(-1, sh_dim, 3),
-                                     indices[start:end],
-                                     centroids,
-                                     vertices.detach(),
-                                     self.current_sh_deg, self.max_sh_deg)
-            features[start:end] = dvrgbs
-        return shs, features
-
-    @staticmethod
-    def init_from_pcd(point_cloud, cameras, device, max_sh_deg,
-                      voxel_size=0.00, **kwargs):
-        torch.manual_seed(2)
-
-        ccenters = torch.stack([c.camera_center.reshape(3) for c in cameras], dim=0).to(device)
-        center = ccenters.mean(dim=0)
-        scaling = torch.linalg.norm(ccenters - center.reshape(1, 3), dim=1, ord=torch.inf).max()
-        print(f"Scene scaling: {scaling}. Center: {center}")
-
-        vertices = torch.as_tensor(point_cloud.points).float()
-
-
-        # vertices = vertices.reshape(-1, 1, 3).expand(-1, init_repeat, 3)
-        # vertices = vertices + torch.randn(*vertices.shape) * dist.reshape(-1, 1, 1).clip(min=0.01)
-        # vertices = vertices.reshape(-1, 3)
-
-        # Convert BasicPointCloud to Open3D PointCloud
-        o3d_pcd = o3d.geometry.PointCloud()
-        o3d_pcd.points = o3d.utility.Vector3dVector(vertices.numpy())
-
-        # Perform voxel downsampling
-        if voxel_size > 0:
-            o3d_pcd = o3d_pcd.voxel_down_sample(voxel_size=voxel_size)
-
-        N = point_cloud.points.shape[0]
-        vertices = torch.as_tensor(np.asarray(o3d_pcd.points)).float()
-        vertices = vertices + torch.randn(*vertices.shape) * 1e-3
-
-        # add sphere
-        pcd_scaling = torch.linalg.norm(vertices - center.cpu().reshape(1, 3), dim=1, ord=2).max()
-        new_radius = pcd_scaling.cpu().item()
-
-        # vertices = sample_uniform_in_sphere(10000, 3, base_radius=0, radius=new_radius, device='cpu') + center.reshape(1, 3).cpu()
-
-        # vertices = vertices + torch.randn(*vertices.shape) * 1e-3
-        # v = Del(vertices.shape[0])
-        # indices_np, prev = v.compute(vertices.detach().cpu().double())
-        # indices_np = indices_np.numpy()
-        # indices_np = indices_np[(indices_np < vertices.shape[0]).all(axis=1)]
-        # vertices = vertices[indices_np].mean(dim=1)
-        # vertices = vertices + torch.randn(*vertices.shape) * 1e-3
-
-        # within_sphere = sample_uniform_in_sphere(10000, 3, base_radius=new_radius, radius=new_radius, device='cpu') + center.reshape(1, 3).cpu()
-        # vertices = torch.cat([vertices, within_sphere], dim=0)
-
-        num_ext = 1000
-        ext_vertices = fibonacci_spiral_on_sphere(num_ext, new_radius, device='cpu') + center.reshape(1, 3).cpu()
-        num_ext = ext_vertices.shape[0]
-
-        # num_ext = 1000
-        # ext_vertices = topo_utils.expand_convex_hull(vertices, 1, device=vertices.device)
-        # if ext_vertices.shape[0] > num_ext:
-        #     inds = np.random.default_rng().permutation(ext_vertices.shape[0])[:num_ext]
-        #     ext_vertices = ext_vertices[inds]
-        # else:
-        #     num_ext = ext_vertices.shape[0]
-        # vertices = torch.cat([vertices, ext_vertices], dim=0)
-        # ext_vertices = torch.empty((0, 3))
-
-        model = Model(vertices.cuda(), ext_vertices, center, scaling,
-                      max_sh_deg=max_sh_deg, **kwargs)
-        return model
-
     @staticmethod
     def load_ckpt(path: Path, device):
         ckpt_path = path / "ckpt.pth"
@@ -461,100 +355,6 @@ class Model(BaseModel):
         model.indices = torch.as_tensor(indices).cuda()
         model.empty_indices = torch.as_tensor(empty_indices).cuda()
         return model
-
-    def calc_tet_density(self):
-        densities = []
-        verts = self.vertices
-        for start in range(0, self.indices.shape[0], self.chunk_size):
-            end = min(start + self.chunk_size, self.indices.shape[0])
-            
-            _, density, _, _, _ = self.compute_batch_features(verts, self.indices, start, end)
-
-            densities.append(density.reshape(-1))
-        return torch.cat(densities)
-
-    def compute_features(self, offset=False):
-        vertices = self.vertices
-        indices = self.indices
-        cs, ds, rs, gs, ss = [], [], [], [], []
-        for start in range(0, indices.shape[0], self.chunk_size):
-            end = min(start + self.chunk_size, indices.shape[0])
-
-            circumcenters, density, rgb, grd, sh = self.compute_batch_features(vertices, indices, start, end)
-            tets = vertices[indices[start:end]]
-            cs.append(circumcenters)
-            ds.append(density)
-            ss.append(sh)
-            if offset:
-                base_color_v0_raw, normed_grd = offset_normalize(rgb, grd, circumcenters, tets)
-                # rs.append(base_color_v0_raw)
-                rs.append(rgb)
-                gs.append(normed_grd)
-            else:
-                rs.append(rgb)
-                gs.append(grd)
-        cs = torch.cat(cs, dim=0)
-        ds = torch.cat(ds, dim=0)
-        rs = torch.cat(rs, dim=0)
-        gs = torch.cat(gs, dim=0)
-        ss = torch.cat(ss, dim=0)
-        return cs, ds, rs, gs, ss
-
-    @property
-    def vertices(self):
-        verts = self.contracted_vertices
-        return torch.cat([verts, self.ext_vertices])
-
-    def sh_up(self):
-        self.current_sh_deg = min(self.max_sh_deg, self.current_sh_deg+1)
-
-    @torch.no_grad()
-    def update_triangulation(self, high_precision=False, density_threshold=0.0, alpha_threshold=0.0):
-        torch.cuda.empty_cache()
-        verts = self.vertices
-        if high_precision:
-            indices_np = Delaunay(verts.detach().cpu().numpy()).simplices.astype(np.int32)
-            # self.indices = torch.tensor(indices_np, device=verts.device).int().cuda()
-        else:
-            v = Del(verts.shape[0])
-            indices_np, prev = v.compute(verts.detach().cpu().double())
-            #indices_np = indices_np.numpy()
-            # 兼容返回 PyTorch Tensor 或 NumPy 数组的情况
-            if isinstance(indices_np, torch.Tensor):
-                indices_np = indices_np.detach().cpu().numpy()
-            else:
-                indices_np = np.asarray(indices_np)
-                
-            indices_np = indices_np[(indices_np < verts.shape[0]).all(axis=1)]
-            del prev
-        
-
-        # Ensure volume is positive
-        indices = torch.as_tensor(indices_np).cuda()
-        vols = topo_utils.tet_volumes(verts[indices])
-        reverse_mask = vols < 0
-        if reverse_mask.sum() > 0:
-            indices[reverse_mask] = indices[reverse_mask][:, [1, 0, 2, 3]]
-
-        # Cull tets with low density
-        # self.full_indices = indices.clone()
-        self.indices = indices
-        if density_threshold > 0 or alpha_threshold > 0:
-            tet_density = self.calc_tet_density()
-            tet_alpha = self.calc_tet_alpha(mode="min", density=tet_density)
-            mask = (tet_density > density_threshold) | (tet_alpha > alpha_threshold)
-            self.empty_indices = self.indices[~mask]
-            self.indices = self.indices[mask]
-            self.mask = mask
-        else:
-            self.empty_indices = torch.empty((0, 4), dtype=self.indices.dtype, device='cuda')
-            # self.mask = torch.ones((self.full_indices.shape[0]), dtype=bool, device='cuda')
-            
-        torch.cuda.empty_cache()
-
-    def __len__(self):
-        return self.vertices.shape[0]
-        
 
     def compute_weight_decay(self):
         return sum([(embed.weight**2).mean() for embed in self.backbone.encoding.embeddings])

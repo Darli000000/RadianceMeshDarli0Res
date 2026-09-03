@@ -27,8 +27,8 @@ def settings_from_env():
 
 def select_model():
     settings = settings_from_env()
-    if settings and settings["model"] == "ingp_v2":
-        from models.ingp_color_v2 import Model, TetOptimizer
+    if settings and settings["model"] == "ingp":
+        from models.ingp_color import Model, TetOptimizer
     elif settings and settings["model"] == "vertex_v2":
         from models.vertex_color_v2 import Model, TetOptimizer
     else:
