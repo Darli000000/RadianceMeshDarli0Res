@@ -1,4 +1,4 @@
-"""Load pre-freeze vertex or standard post-freeze checkpoints for evaluation."""
+"""Load vertex/iNGP/frozen model weights for evaluation, NOT optimizer resume."""
 import json
 from pathlib import Path
 
@@ -12,7 +12,26 @@ def load_ablation_checkpoint(path, device="cuda"):
     checkpoint = path / "ckpt.pth" if path.is_dir() else path
     state = torch.load(checkpoint, map_location=device, weights_only=True)
     if "raw_features" in state:
+        if state.get("_extra_state", {}).get("format") == "vertex_color_v2":
+            from models.vertex_color_v2 import Model as VertexV2
+            return VertexV2.load_ckpt(checkpoint, device)
         return Model.load_ckpt(checkpoint, device)
+    if any(key.startswith("backbone.") for key in state):
+        from models.ingp_color import Model as InGP
+        config_path = checkpoint.parent / "config.json"
+        if not config_path.exists() and checkpoint.parent.name == "debug_pre_densify":
+            config_path = checkpoint.parent.parent / "config.json"
+        config = json.loads(config_path.read_text())
+        if config.get("sh_interval", 0) != 0:
+            raise ValueError("Legacy pre-freeze iNGP weights omit current SH degree; use a frozen checkpoint for evaluation.")
+        model = InGP(state["contracted_vertices"], state["ext_vertices"], state["center"],
+                     state["scene_scaling"], **config)
+        model.load_state_dict({k: v for k, v in state.items() if k not in ("indices", "empty_indices")})
+        model.indices = state["indices"]
+        model.empty_indices = state.get("empty_indices", state["indices"][:0])
+        model.current_sh_deg = config["max_sh_deg"]
+        model.min_t = float(config["min_t"])
+        return model
     if "interior_vertices" not in state or "density" not in state:
         raise ValueError("Expected a vertex-color or frozen checkpoint, not an iNGP checkpoint.")
     # Use the existing frozen class; do not route through its loader, which

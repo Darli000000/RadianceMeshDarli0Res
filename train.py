@@ -17,11 +17,10 @@ from tqdm import tqdm
 import numpy as np
 from utils import cam_util
 from utils.train_util import *
-
-# EDIT : non-ingp model
-from models.vertex_color import Model, TetOptimizer
-#from models.ingp_color import Model, TetOptimizer
-
+# non-ingp model
+from utils.ablation_protocol import select_model, parse_training_args
+Model, TetOptimizer = select_model()
+# from models.ingp_color import Model, TetOptimizer
 from models.frozen import freeze_model
 # from models.ingp_density import Model, TetOptimizer
 # from models.frozen_vertices import freeze_model
@@ -149,7 +148,7 @@ args.ablate_circumsphere = True
 args.ablate_downweighing = False
 
 
-args = Args.from_namespace(args.get_parser().parse_args())
+args, ablation = parse_training_args(args)
 
 args.output_path.mkdir(exist_ok=True, parents=True)
 
@@ -171,6 +170,7 @@ else:
                                 current_sh_deg = args.max_sh_deg if args.sh_interval <= 0 else 0,
                                 **args.as_dict())
 min_t = args.min_t
+ablation.after_init(model, args)
 
 tet_optim = TetOptimizer(model, **args.as_dict())
 if args.eval:
@@ -218,9 +218,10 @@ for iteration in progress_bar:
 
     if do_delaunay or do_freeze:
         st = time.time()
-        tet_optim.update_triangulation(
-            density_threshold=args.density_threshold if iteration > args.threshold_start else 0,
-            alpha_threshold=args.alpha_threshold if iteration > args.threshold_start else 0, high_precision=do_freeze)
+        with ablation.event("triangulation", iteration, lambda: model, sample_camera, render, args):
+            tet_optim.update_triangulation(
+                density_threshold=args.density_threshold if iteration > args.threshold_start else 0,
+                alpha_threshold=args.alpha_threshold if iteration > args.threshold_start else 0, high_precision=do_freeze)
         if do_freeze:
             del tet_optim
             # model.eval()
@@ -229,7 +230,8 @@ for iteration in progress_bar:
             mask = torch.ones((n_tets), device=device, dtype=bool)
             # model.train()
             print(f"Kept {mask.sum()} tets")
-            model, tet_optim = freeze_model(model, mask, args)
+            with ablation.event("freeze", iteration, lambda: model, sample_camera, render, args):
+                model, tet_optim = freeze_model(model, mask, args)
             # model, tet_optim = freeze_model(model, **args.as_dict())
             gc.collect()
             torch.cuda.empty_cache()
@@ -239,11 +241,13 @@ for iteration in progress_bar:
         random.shuffle(inds)
         psnrs.append([])
     ind = inds.pop()
+    ablation.log_sample(iteration, ind)
     camera = train_cameras[ind]
     target = camera.original_image.cuda()
     gt_mask = camera.gt_alpha_mask.cuda()
 
     st = time.time()
+    ablation.seed_domain(iteration, "train_render")
     ray_jitter = torch.rand((camera.image_height, camera.image_width, 2), device=device)
     render_pkg = render(camera, model, scene_scaling=model.scene_scaling, ray_jitter=ray_jitter, **args.as_dict())
     image = render_pkg['render']
@@ -290,6 +294,7 @@ for iteration in progress_bar:
         with torch.no_grad():
             # sampled_cams = [train_cameras[i] for i in densification_sampler.nextids()]
             # DEBUG
+            ablation.seed_domain(iteration, "densification")
             sampled_ids = densification_sampler.nextids()
             sampled_id_list = sampled_ids.detach().cpu().tolist()
             sampled_cams = [train_cameras[i] for i in sampled_id_list]
@@ -336,18 +341,20 @@ for iteration in progress_bar:
             # target_addition = targets[dschedule.index(iteration)] - model.vertices.shape[0]
             target_addition = args.budget - model.vertices.shape[0]
 
-            apply_densification(
-                stats,
-                model       = model,
-                tet_optim   = tet_optim,
-                args        = args,
-                iteration   = iteration,
-                device      = device,
-                sample_cam  = sample_camera,
-                sample_image= sample_image,     # whatever RGB debug frame you use
-                target_addition= target_addition
+            ablation.seed_domain(iteration, "densify_selection")
+            with ablation.event("densification", iteration, lambda: model, sample_camera, render, args):
+                apply_densification(
+                    stats,
+                    model       = model,
+                    tet_optim   = tet_optim,
+                    args        = args,
+                    iteration   = iteration,
+                    device      = device,
+                    sample_cam  = sample_camera,
+                    sample_image= sample_image,     # whatever RGB debug frame you use
+                    target_addition= target_addition
 
-            )
+                )
             # tet_optim.prune(**args.as_dict())
             del stats
             gc.collect()
