@@ -1,0 +1,22 @@
+{
+  "original": {
+    "returncode": 0,
+    "status": "completed",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_geometry_7g3wll5q/original.log"
+  },
+  "expand_1pct": {
+    "returncode": -6,
+    "status": "SIGABRT",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_geometry_7g3wll5q/expand_1pct.log"
+  },
+  "radial_jitter": {
+    "returncode": -6,
+    "status": "SIGABRT",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_geometry_7g3wll5q/radial_jitter.log"
+  },
+  "expand_and_jitter": {
+    "returncode": -6,
+    "status": "SIGABRT",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_geometry_7g3wll5q/expand_and_jitter.log"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "capture": {
+    "returncode": 0,
+    "status": "completed",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_probe_yln53iu1/capture.log"
+  },
+  "exact_tensor": {
+    "returncode": -6,
+    "status": "SIGABRT",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_probe_yln53iu1/exact_tensor.log"
+  },
+  "exact_numpy": {
+    "returncode": -6,
+    "status": "SIGABRT",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_probe_yln53iu1/exact_numpy.log"
+  },
+  "random_numpy": {
+    "returncode": 0,
+    "status": "completed",
+    "log": "/root/radience_mesh/radiance_meshes/gdel_probe_yln53iu1/random_numpy.log"
+  }
+}

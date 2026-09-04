@@ -1,0 +1,11 @@
+{
+  "shape": [
+    1032,
+    3
+  ],
+  "dtype": "float64",
+  "finite": true,
+  "unique_points": 1032,
+  "internal_vertices": 32,
+  "exterior_vertices": 1000
+}

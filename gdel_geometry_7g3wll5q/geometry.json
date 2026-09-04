@@ -1,0 +1,16 @@
+{
+  "internal_vertices": 32,
+  "exterior_vertices": 1000,
+  "fitted_center": [
+    0.6666666916858057,
+    0.6666666888971888,
+    0.666666684861983
+  ],
+  "mean_radius": 1.5728455855417756,
+  "original_radius_std": 6.726392576990103e-08,
+  "jitter_relative_amplitude": 0.0001,
+  "jitter_seed": 20260903,
+  "expansion_factor": 1.01,
+  "note": "Diagnostic geometry only; training code is unchanged.",
+  "source": "/root/radience_mesh/radiance_meshes/gdel_probe_yln53iu1"
+}
