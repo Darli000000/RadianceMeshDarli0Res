@@ -159,6 +159,20 @@ np.savetxt(str(args.output_path / "transform.txt"), scene_info.transform)
 
 args.num_samples = min(len(train_cameras), args.num_samples)
 
+# EDIT
+# args print
+print(
+    "\n========== Effective Training Configuration ==========\n"
+    + json.dumps(
+        args.as_dict(),
+        indent=2,
+        sort_keys=True,
+        cls=CustomEncoder,
+    )
+    + "\n======================================================",
+    flush=True,
+)
+
 with (args.output_path / "config.json").open("w") as f:
     json.dump(args.as_dict(), f, cls=CustomEncoder)
 
